@@ -148,6 +148,8 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .centered h3 { color: var(--text); font-size: 1rem; }
     .centered p { font-size: .82rem; line-height: 1.6; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
     code { background: var(--surface2); border: 1px solid var(--border); padding: 1px 7px; border-radius: 4px; font-family: monospace; color: var(--accent); font-size: .85em; }
     .progress-bar { width: 240px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
     .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
@@ -308,14 +310,37 @@
         <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
       </div>
 
-      <div class="table-card">
-        <div class="table-head-row">Preisverlauf (letzte ${Math.min(points.length,50)} Einträge)</div>
-        <table>
-          <thead><tr><th>Datum</th><th>Preis</th></tr></thead>
-          <tbody>
-            ${[...points].reverse().slice(0,50).map(p=>`<tr><td>${fmtDate(p[0])}</td><td class="price">${fmt(p[1])}</td></tr>`).join('')}
-          </tbody>
-        </table>
+      <div class="two-col">
+        <div class="table-card">
+          <div class="table-head-row">Preisverlauf (letzte ${Math.min(points.length,50)} Einträge)</div>
+          <table>
+            <thead><tr><th>Datum</th><th>Preis</th></tr></thead>
+            <tbody>
+              ${[...points].reverse().slice(0,50).map(p=>`<tr><td>${fmtDate(p[0])}</td><td class="price">${fmt(p[1])}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-card">
+          <div class="table-head-row">
+            Letzte Verkäufe
+            <span style="font-size:.7rem;color:var(--muted);font-weight:400;margin-left:8px">via PriceCharting</span>
+          </div>
+          ${(() => {
+            const sales = setData.recent_sales || [];
+            if (!sales.length) return `<div style="padding:24px 20px;color:var(--muted);font-size:.83rem">Noch keine Verkaufsdaten</div>`;
+            return `<table>
+              <thead><tr><th>Datum</th><th>Verkaufspreis</th></tr></thead>
+              <tbody>
+                ${sales.map(s => `
+                  <tr>
+                    <td>${s.date}</td>
+                    <td class="price">\$${s.price.toFixed(2)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>`;
+          })()}
+        </div>
       </div>
     `;
 

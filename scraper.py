@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 One Piece TCG Booster Box Price Tracker – OP-01 bis OP-15
-Fetches price history from PriceCharting.com and saves to prices_all.json
+Fetches price history from PriceCharting.com + recent eBay sold listings.
 """
 
 import json
@@ -24,21 +24,21 @@ except ImportError:
 DATA_FILE = Path(__file__).parent / "prices_all.json"
 
 SETS = [
-    {"id": "op01", "name": "OP-01 Romance Dawn",            "slug": "one-piece-romance-dawn"},
-    {"id": "op02", "name": "OP-02 Paramount War",           "slug": "one-piece-paramount-war"},
-    {"id": "op03", "name": "OP-03 Pillars of Strength",     "slug": "one-piece-pillars-of-strength"},
-    {"id": "op04", "name": "OP-04 Kingdoms of Intrigue",    "slug": "one-piece-kingdoms-of-intrigue"},
-    {"id": "op05", "name": "OP-05 Awakening of the New Era","slug": "one-piece-awakening-of-the-new-era"},
-    {"id": "op06", "name": "OP-06 Wings of the Captain",    "slug": "one-piece-wings-of-the-captain"},
-    {"id": "op07", "name": "OP-07 500 Years in the Future", "slug": "one-piece-500-years-in-the-future"},
-    {"id": "op08", "name": "OP-08 Two Legends",             "slug": "one-piece-two-legends"},
-    {"id": "op09", "name": "OP-09 Emperors in the New World","slug": "one-piece-emperors-in-the-new-world"},
-    {"id": "op10", "name": "OP-10 Royal Blood",             "slug": "one-piece-royal-blood"},
-    {"id": "op11", "name": "OP-11 Fist of Divine Speed",    "slug": "one-piece-fist-of-divine-speed"},
-    {"id": "op12", "name": "OP-12 Legacy of the Master",    "slug": "one-piece-legacy-of-the-master"},
-    {"id": "op13", "name": "OP-13 Carrying On His Will",    "slug": "one-piece-carrying-on-his-will"},
-    {"id": "op14", "name": "OP-14 Azure Sea's Seven",       "slug": "one-piece-azure-sea%27s-seven"},
-    {"id": "op15", "name": "OP-15 Adventure on Kami's Island", "slug": "one-piece-adventure-on-kami%27s-island"},
+    {"id": "op01", "name": "OP-01 Romance Dawn",             "slug": "one-piece-romance-dawn",              "ebay": "One Piece Romance Dawn Booster Box english sealed"},
+    {"id": "op02", "name": "OP-02 Paramount War",            "slug": "one-piece-paramount-war",             "ebay": "One Piece Paramount War Booster Box english sealed"},
+    {"id": "op03", "name": "OP-03 Pillars of Strength",      "slug": "one-piece-pillars-of-strength",       "ebay": "One Piece Pillars of Strength Booster Box english sealed"},
+    {"id": "op04", "name": "OP-04 Kingdoms of Intrigue",     "slug": "one-piece-kingdoms-of-intrigue",      "ebay": "One Piece Kingdoms of Intrigue Booster Box english sealed"},
+    {"id": "op05", "name": "OP-05 Awakening of the New Era", "slug": "one-piece-awakening-of-the-new-era",  "ebay": "One Piece Awakening New Era Booster Box english sealed"},
+    {"id": "op06", "name": "OP-06 Wings of the Captain",     "slug": "one-piece-wings-of-the-captain",      "ebay": "One Piece Wings of the Captain Booster Box english sealed"},
+    {"id": "op07", "name": "OP-07 500 Years in the Future",  "slug": "one-piece-500-years-in-the-future",   "ebay": "One Piece 500 Years in the Future Booster Box english sealed"},
+    {"id": "op08", "name": "OP-08 Two Legends",              "slug": "one-piece-two-legends",               "ebay": "One Piece Two Legends Booster Box english sealed"},
+    {"id": "op09", "name": "OP-09 Emperors in the New World","slug": "one-piece-emperors-in-the-new-world",  "ebay": "One Piece Emperors in the New World Booster Box english sealed"},
+    {"id": "op10", "name": "OP-10 Royal Blood",              "slug": "one-piece-royal-blood",               "ebay": "One Piece Royal Blood Booster Box english sealed"},
+    {"id": "op11", "name": "OP-11 Fist of Divine Speed",     "slug": "one-piece-fist-of-divine-speed",      "ebay": "One Piece Fist of Divine Speed Booster Box english sealed"},
+    {"id": "op12", "name": "OP-12 Legacy of the Master",     "slug": "one-piece-legacy-of-the-master",      "ebay": "One Piece Legacy of the Master Booster Box english sealed"},
+    {"id": "op13", "name": "OP-13 Carrying On His Will",     "slug": "one-piece-carrying-on-his-will",      "ebay": "One Piece Carrying On His Will Booster Box english sealed"},
+    {"id": "op14", "name": "OP-14 Azure Sea's Seven",        "slug": "one-piece-azure-sea%27s-seven",       "ebay": "One Piece Azure Sea Seven OP-14 Booster Box english sealed"},
+    {"id": "op15", "name": "OP-15 Adventure on Kami's Island","slug": "one-piece-adventure-on-kami%27s-island","ebay": "One Piece Adventure Kami Island OP-15 Booster Box sealed"},
 ]
 
 HEADERS = {
@@ -47,9 +47,11 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/122.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
+
+# ── PriceCharting ──────────────────────────────────────────
 
 def make_url(slug: str) -> str:
     return f"https://www.pricecharting.com/game/{slug}/booster-box"
@@ -68,8 +70,7 @@ def fetch_page(url: str) -> str | None:
 
 
 def parse_chart_data(html: str) -> list:
-    pattern = r'"used"\s*:\s*(\[\[.*?\]\])'
-    match = re.search(pattern, html, re.DOTALL)
+    match = re.search(r'"used"\s*:\s*(\[\[.*?\]\])', html, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1))
@@ -95,12 +96,64 @@ def parse_current_price(html: str) -> float | None:
 
 
 def merge_history(existing: list, new_data: list) -> list:
-    existing_ts = {entry[0] for entry in existing}
-    for entry in new_data:
-        if entry[0] not in existing_ts:
-            existing.append(entry)
+    existing_ts = {e[0] for e in existing}
+    for e in new_data:
+        if e[0] not in existing_ts:
+            existing.append(e)
     return sorted(existing, key=lambda x: x[0])
 
+
+# ── eBay Sold Listings ─────────────────────────────────────
+
+def parse_recent_sales(html: str, max_results: int = 5) -> list[dict]:
+    """Parse recent individual sales from PriceCharting page."""
+    soup = BeautifulSoup(html, "html.parser")
+    results = []
+
+    # Recent sales table – rows have: date | (icon) | title | price | (report)
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) < 3:
+                continue
+
+            # Datum in erster Zelle (Format: YYYY-MM-DD)
+            date_text = cells[0].get_text(strip=True)
+            if not re.match(r"\d{4}-\d{2}-\d{2}", date_text):
+                continue
+
+            # Preis: suche in allen Zellen nach $xx.xx
+            price = None
+            title = ""
+            for cell in cells[1:]:
+                text = cell.get_text(strip=True)
+                m = re.match(r"^\$?([\d,]+\.\d{2})$", text)
+                if m:
+                    try:
+                        price = float(m.group(1).replace(",", ""))
+                    except ValueError:
+                        pass
+                elif len(text) > 5 and not text.startswith("$") and "report" not in text.lower() and "subscribe" not in text.lower() and "time warp" not in text.lower():
+                    if not title:
+                        title = text[:80]
+
+            if price and price > 10:
+                results.append({
+                    "date": date_text,
+                    "price": price,
+                    "title": title,
+                })
+
+            if len(results) >= max_results:
+                break
+        if results:
+            break
+
+    return results
+
+
+# ── Persistence ────────────────────────────────────────────
 
 def load_existing() -> dict:
     if DATA_FILE.exists():
@@ -114,9 +167,11 @@ def save(data: dict):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+# ── Main ───────────────────────────────────────────────────
+
 def run():
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] One Piece TCG Price Tracker")
-    print("=" * 55)
+    print("=" * 60)
 
     data = load_existing()
     now_ms = int(time.time() * 1000)
@@ -124,48 +179,52 @@ def run():
 
     for i, s in enumerate(SETS):
         print(f"\n  [{i+1:02d}/15] {s['name']}")
+
+        # ── PriceCharting ──
         url = make_url(s["slug"])
         html = fetch_page(url)
 
-        if html is None:
-            print("    Kein Eintrag auf PriceCharting (noch nicht verfügbar)")
-            if s["id"] not in data["sets"]:
-                data["sets"][s["id"]] = {
-                    "name": s["name"], "url": url,
-                    "history": [], "snapshots": [], "available": False
-                }
-            continue
-
-        chart_data = parse_chart_data(html)
-        current_price = parse_current_price(html)
-
         entry = data["sets"].setdefault(s["id"], {
             "name": s["name"], "url": url,
-            "history": [], "snapshots": [], "available": True
+            "history": [], "snapshots": [],
+            "ebay_sold": [], "available": False
         })
-        entry["available"] = True
         entry["name"] = s["name"]
         entry["url"] = url
 
-        if chart_data:
-            entry["history"] = merge_history(entry.get("history", []), chart_data)
-            print(f"    Datenpunkte: {len(entry['history'])}", end="")
+        if html is None:
+            print("    PriceCharting: kein Eintrag")
+        else:
+            entry["available"] = True
+            chart_data = parse_chart_data(html)
+            current_price = parse_current_price(html)
 
-        if current_price:
-            print(f"  |  Preis: ${current_price:.2f}", end="")
-            recent = [s2 for s2 in entry.get("snapshots", []) if now_ms - s2[0] < one_hour]
-            if not recent:
-                entry.setdefault("snapshots", []).append([now_ms, round(current_price * 100)])
-        print()
+            if chart_data:
+                entry["history"] = merge_history(entry.get("history", []), chart_data)
+                print(f"    PC Datenpunkte: {len(entry['history'])}", end="")
 
-        # Rate limiting: kurze Pause zwischen Requests
-        if i < len(SETS) - 1:
-            time.sleep(1.5)
+            if current_price:
+                print(f"  |  Preis: ${current_price:.2f}", end="")
+                recent = [s2 for s2 in entry.get("snapshots", []) if now_ms - s2[0] < one_hour]
+                if not recent:
+                    entry.setdefault("snapshots", []).append([now_ms, round(current_price * 100)])
+            print()
+
+        # ── Recent Sales (aus PriceCharting HTML) ──
+        if html:
+            recent_sales = parse_recent_sales(html, max_results=5)
+            if recent_sales:
+                entry["recent_sales"] = recent_sales
+                print(f"    Letzte Verkäufe: {len(recent_sales)}  (zuletzt ${recent_sales[0]['price']:.2f} am {recent_sales[0]['date']})")
+            else:
+                print("    Letzte Verkäufe: keine gefunden")
+
+        time.sleep(1.5)
 
     data["last_updated"] = datetime.now().isoformat()
     save(data)
     print(f"\n  Gespeichert: {DATA_FILE}")
-    print("=" * 55)
+    print("=" * 60)
     return data
 
 
