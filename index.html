@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>One Piece TCG Preistracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg:       #0b0d12;
+      --surface:  #13181f;
+      --surface2: #1a2030;
+      --surface3: #212840;
+      --border:   #252d3d;
+      --border2:  #2e3a50;
+      --accent:   #e8b84b;
+      --accent-dim: rgba(232,184,75,.12);
+      --blue:     #5b9cf6;
+      --green:    #3dd68c;
+      --red:      #f06060;
+      --purple:   #a78bfa;
+      --text:     #e2e8f0;
+      --text2:    #94a3b8;
+      --text3:    #5a6a82;
+      --radius:   10px;
+      --sidebar:  260px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 14px; }
+
+    /* ══ SCROLLBAR ══ */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    /* ══ HEADER ══ */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 52px;
+      display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 32px; height: 32px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent) 0%, #c8960a 100%);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+    .header-title { font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+    .header-sub { font-size: .72rem; color: var(--text3); margin-top: 1px; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(61,214,140,.4)} 50%{opacity:.6;box-shadow:0 0 0 4px rgba(61,214,140,0)} }
+    #lastUpdate { font-size: .72rem; color: var(--text3); }
+    .icon-btn {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+      width: 30px; height: 30px; border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: .9rem; transition: all .15s;
+    }
+    .icon-btn:hover { background: var(--surface3); border-color: var(--border2); color: var(--text); }
+
+    /* ══ GLOBAL SEARCH ══ */
+    .gsearch-wrap { position: relative; }
+    .gsearch {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px 6px 32px; border-radius: 7px; font-size: .8rem; width: 220px;
+      outline: none; font-family: inherit; transition: all .15s;
+    }
+    .gsearch:focus { border-color: var(--accent); width: 280px; background: var(--surface3); }
+    .gsearch::placeholder { color: var(--text3); }
+    .gsearch-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: .8rem; pointer-events: none; }
+    .gsearch-drop {
+      position: absolute; top: calc(100% + 6px); right: 0;
+      width: 420px; background: var(--surface); border: 1px solid var(--border2);
+      border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      z-index: 999; overflow: hidden; display: none;
+    }
+    .gsearch-drop.open { display: block; }
+    .gsd-header { padding: 8px 14px; font-size: .65rem; text-transform: uppercase; letter-spacing: .09em; color: var(--text3); border-bottom: 1px solid var(--border); font-weight: 600; }
+    .gsd-item {
+      display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+      cursor: pointer; transition: background .1s; border-top: 1px solid var(--border);
+    }
+    .gsd-item:first-of-type { border-top: none; }
+    .gsd-item:hover { background: var(--surface2); }
+    .gsd-set { font-size: .62rem; font-weight: 700; color: var(--text3); font-family: monospace; flex-shrink: 0; width: 38px; }
+    .gsd-name { font-size: .82rem; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gsd-name mark { background: rgba(232,184,75,.25); color: var(--accent); border-radius: 2px; }
+    .gsd-prices { display: flex; gap: 8px; flex-shrink: 0; }
+    .gsd-price { font-size: .75rem; font-weight: 700; }
+    .gsd-price.ug { color: var(--accent); }
+    .gsd-price.p10 { color: var(--purple); }
+    .gsd-empty { padding: 18px 14px; text-align: center; color: var(--text3); font-size: .8rem; }
+
+    /* ══ LAYOUT ══ */
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* ══ SIDEBAR ══ */
+    aside {
+      width: var(--sidebar); background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+    }
+    .sidebar-top {
+      padding: 10px 12px 6px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .sidebar-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--text3); font-weight: 600; }
+    .set-list { overflow-y: auto; flex: 1; }
+
+    .set-item {
+      display: flex; align-items: center; gap: 0;
+      padding: 0; cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: background .12s;
+      position: relative;
+    }
+    .set-item:hover { background: var(--surface2); }
+    .set-item.active { background: var(--accent-dim); border-left-color: var(--accent); }
+    .set-item.unavailable { opacity: .35; pointer-events: none; }
+
+    .set-num {
+      width: 44px; flex-shrink: 0; text-align: center;
+      font-size: .65rem; font-weight: 700; font-family: 'Consolas', monospace;
+      color: var(--text3); padding: 11px 0;
+    }
+    .set-item.active .set-num { color: var(--accent); }
+
+    .set-info { flex: 1; padding: 9px 4px 9px 0; min-width: 0; }
+    .set-sname { font-size: .8rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); }
+    .set-item.active .set-sname { color: var(--text); }
+    .set-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+    .set-price-small { font-size: .72rem; font-weight: 700; color: var(--accent); }
+    .trend-tag { font-size: .6rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+    .trend-tag.up { background: rgba(61,214,140,.15); color: var(--green); }
+    .trend-tag.dn { background: rgba(240,96,96,.15); color: var(--red); }
+
+    .sidebar-footer { padding: 8px 10px; border-top: 1px solid var(--border); }
+    .compare-btn {
+      width: 100%; background: transparent; border: 1px solid var(--border);
+      color: var(--text3); padding: 7px 10px; border-radius: 7px; font-size: .75rem;
+      cursor: pointer; transition: all .15s; font-family: inherit; text-align: left; display: flex; align-items: center; gap: 7px;
+    }
+    .compare-btn:hover { background: var(--surface2); color: var(--text2); border-color: var(--border2); }
+    .compare-btn.active { background: rgba(91,156,246,.1); border-color: var(--blue); color: var(--blue); }
+
+    /* ══ MAIN ══ */
+    main { flex: 1; overflow-y: auto; padding: 20px 22px; }
+
+    /* ══ PAGE TITLE ══ */
+    .page-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
+    .page-title h2 { font-size: 1.15rem; font-weight: 700; letter-spacing: -.02em; }
+    .page-title .pc-link { font-size: .72rem; color: var(--text3); text-decoration: none; transition: color .15s; }
+    .page-title .pc-link:hover { color: var(--blue); }
+
+    /* ══ TABS ══ */
+    .tabs { display: flex; gap: 2px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      background: none; border: none; color: var(--text3); padding: 8px 16px;
+      font-size: .82rem; cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -1px; transition: all .15s; font-family: inherit; display: flex; align-items: center; gap: 6px;
+    }
+    .tab-btn:hover { color: var(--text2); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab-count { background: var(--surface2); border: 1px solid var(--border); color: var(--text3); font-size: .6rem; padding: 1px 5px; border-radius: 10px; font-weight: 600; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ══ PAGE HEADER WITH BOX IMAGE ══ */
+    .set-header { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
+    .box-img { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; }
+    .box-img-placeholder { width: 80px; height: 80px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; display:flex; align-items:center; justify-content:center; font-size:2rem; }
+    .set-header-info h2 { font-size: 1.15rem; font-weight: 700; letter-spacing: -.02em; }
+    .set-header-info .pc-link { font-size: .72rem; color: var(--text3); text-decoration: none; transition: color .15s; display: inline-block; margin-top: 4px; }
+    .set-header-info .pc-link:hover { color: var(--blue); }
+
+    /* ══ CARD IMAGE HOVER PREVIEW ══ */
+    .card-img-thumb { width: 36px; height: 50px; object-fit: contain; border-radius: 4px; border: 1px solid var(--border); background: var(--surface2); cursor: pointer; transition: transform .15s; vertical-align: middle; }
+    .card-img-thumb:hover { transform: scale(1.05); }
+    td.card-img-cell { width: 50px; padding: 5px 8px !important; }
+
+    /* Lightbox */
+    .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.8); z-index: 9999; align-items: center; justify-content: center; cursor: pointer; }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 340px; max-height: 80vh; border-radius: 10px; box-shadow: 0 0 60px rgba(0,0,0,.8); }
+
+    /* ══ STAT ROW ══ */
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr) 1.4fr; gap: 10px; margin-bottom: 16px; }
+    .stat-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; position: relative; overflow: hidden;
+    }
+    .stat-box::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; }
+    .stat-box.s-cur::after { background: var(--accent); }
+    .stat-box.s-min::after { background: var(--green); }
+    .stat-box.s-max::after { background: var(--red); }
+    .stat-box.s-avg::after { background: var(--blue); }
+    .stat-box.s-chg::after { background: var(--purple); }
+    .s-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .09em; color: var(--text3); font-weight: 600; margin-bottom: 7px; }
+    .s-val { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+    .stat-box.s-cur .s-val { color: var(--accent); }
+    .stat-box.s-min .s-val { color: var(--green); }
+    .stat-box.s-max .s-val { color: var(--red); }
+    .stat-box.s-avg .s-val { color: var(--blue); }
+    .s-sub { font-size: .68rem; color: var(--text3); margin-top: 4px; }
+    .chg-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: .8rem; font-weight: 700; margin-top: 2px; }
+    .chg-pill.up { background: rgba(61,214,140,.12); color: var(--green); }
+    .chg-pill.dn { background: rgba(240,96,96,.12); color: var(--red); }
+
+    /* ══ CHART ══ */
+    .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+    .chart-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .chart-lbl { font-size: .8rem; font-weight: 600; color: var(--text2); }
+    .range-row { display: flex; gap: 4px; }
+    .rng { background: transparent; border: 1px solid var(--border); color: var(--text3); padding: 3px 11px; border-radius: 5px; font-size: .71rem; cursor: pointer; transition: all .12s; font-family: inherit; }
+    .rng:hover { border-color: var(--border2); color: var(--text2); }
+    .rng.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+    .chart-wrap { position: relative; height: 300px; }
+
+    /* ══ BOTTOM GRID ══ */
+    .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    @media (max-width: 800px) { .bottom-grid { grid-template-columns: 1fr; } .stat-row { grid-template-columns: repeat(2,1fr); } }
+
+    /* ══ TABLE CARD ══ */
+    .tbl-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .tbl-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .tbl-title { font-size: .82rem; font-weight: 600; }
+    .tbl-badge { font-size: .65rem; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; }
+    .ext-link { font-size: .7rem; color: var(--blue); text-decoration: none; border: 1px solid rgba(91,156,246,.3); padding: 3px 9px; border-radius: 5px; white-space: nowrap; transition: all .15s; }
+    .ext-link:hover { background: rgba(91,156,246,.1); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { padding: 7px 16px; text-align: left; font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text3); background: var(--surface2); font-weight: 600; border-bottom: 1px solid var(--border); }
+    tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 8px 16px; font-size: .8rem; }
+    td.price { font-weight: 700; color: var(--accent); font-size: .85rem; }
+    td.rank { color: var(--text3); font-size: .7rem; width: 32px; text-align: right; padding-right: 6px; font-family: monospace; }
+    td.card-num { font-family: 'Consolas', monospace; font-size: .7rem; color: var(--text3); }
+    td.card-name a { color: var(--text2); text-decoration: none; transition: color .12s; }
+    td.card-name a:hover { color: var(--accent); }
+
+    /* ══ CARD SEARCH ══ */
+    .search-wrap { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    .card-search { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 7px 11px; border-radius: 6px; font-size: .8rem; outline: none; font-family: inherit; transition: border-color .15s; }
+    .card-search:focus { border-color: var(--accent); }
+    .card-search::placeholder { color: var(--text3); }
+
+    /* ══ COMPARE GRID ══ */
+    .cmp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 10px; }
+    .cmp-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px; cursor: pointer; transition: all .15s;
+    }
+    .cmp-card:hover { border-color: var(--border2); background: var(--surface2); transform: translateY(-1px); }
+    .cmp-card.unavailable { opacity: .3; pointer-events: none; }
+    .cmp-op { font-size: .62rem; font-weight: 700; color: var(--text3); font-family: monospace; margin-bottom: 5px; letter-spacing: .05em; }
+    .cmp-name { font-size: .78rem; font-weight: 600; line-height: 1.35; margin-bottom: 10px; color: var(--text); }
+    .cmp-price { font-size: 1.3rem; font-weight: 800; color: var(--accent); letter-spacing: -.02em; }
+    .cmp-trend { margin-top: 4px; }
+    .cmp-canvas { height: 44px; margin-top: 10px; display: block; }
+
+    /* ══ LOADING ══ */
+    .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 320px; gap: 14px; color: var(--text3); }
+    .spinner { width: 32px; height: 32px; border: 2.5px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading h3 { font-size: .95rem; color: var(--text2); }
+    .loading p { font-size: .78rem; line-height: 1.6; text-align: center; }
+    .pbar { width: 220px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .pfill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s; }
+    .no-data { padding: 40px 20px; text-align: center; color: var(--text3); font-size: .82rem; }
+
+    /* ══ NAV TABS (Hauptnavigation) ══ */
+    .nav-tabs { display: flex; align-items: center; gap: 3px; margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border); }
+    .nav-tab {
+      background: none; border: 1px solid transparent; color: var(--text3);
+      height: 30px; padding: 0 13px; border-radius: 7px; cursor: pointer;
+      font-size: .8rem; font-weight: 600; transition: all .15s;
+      font-family: inherit; display: flex; align-items: center; gap: 6px;
+    }
+    .nav-tab:hover { background: var(--surface3); color: var(--text2); border-color: var(--border); }
+    .nav-tab.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(232,184,75,.35); }
+    .nav-tab-badge {
+      background: var(--accent); color: #000; font-size: .58rem; font-weight: 800;
+      min-width: 16px; height: 16px; border-radius: 8px; display: inline-flex;
+      align-items: center; justify-content: center; padding: 0 4px;
+    }
+
+    /* ══ INVENTORY PAGE ══ */
+    .inv-page { flex: 1; overflow-y: auto; display: none; flex-direction: column; }
+    .inv-page.active { display: flex; }
+    .inv-page-inner { padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+    .inv-top-grid { display: grid; grid-template-columns: 1fr 280px; gap: 16px; align-items: start; }
+    .inv-chart-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .inv-chart-title { font-size: .8rem; font-weight: 600; color: var(--text2); margin-bottom: 14px; }
+    .inv-chart-body { display: flex; gap: 22px; align-items: center; }
+    .inv-chart-canvas-wrap { width: 190px; height: 190px; flex-shrink: 0; position: relative; }
+    .inv-chart-legend { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+    .inv-legend-item { display: flex; align-items: center; gap: 8px; font-size: .75rem; }
+    .inv-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .inv-legend-label { flex: 1; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .inv-legend-val { color: var(--accent); font-weight: 700; font-size: .72rem; flex-shrink: 0; }
+    .inv-legend-pct { font-size: .65rem; color: var(--text3); flex-shrink: 0; min-width: 32px; text-align: right; }
+    .inv-chart-empty { padding: 40px 20px; text-align: center; color: var(--text3); font-size: .82rem; line-height: 1.7; }
+    .inv-stats-panel { display: flex; flex-direction: column; gap: 10px; }
+    .inv-stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; position: relative; overflow: hidden;
+    }
+    .inv-stat-card::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; }
+    .inv-stat-card.s-accent::after { background: var(--accent); }
+    .inv-stat-card.s-blue::after   { background: var(--blue); }
+    .inv-stat-card.s-purple::after { background: var(--purple); }
+    .inv-stat-card.s-green::after  { background: var(--green); }
+    .inv-stat-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .09em; color: var(--text3); font-weight: 600; margin-bottom: 5px; }
+    .inv-stat-val { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+    .inv-stat-card.s-accent .inv-stat-val { color: var(--accent); }
+    .inv-stat-card.s-blue   .inv-stat-val { color: var(--blue); }
+    .inv-stat-card.s-purple .inv-stat-val { color: var(--purple); }
+    .inv-stat-card.s-green  .inv-stat-val { color: var(--green); }
+    .inv-stat-sub { font-size: .7rem; color: var(--text3); margin-top: 4px; }
+
+    /* Kartenliste im Inventar */
+    .inv-page-list-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .inv-page-list-head {
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .inv-page-list-title { font-size: .82rem; font-weight: 600; color: var(--text2); }
+    .inv-clear-btn {
+      background: transparent; border: 1px solid rgba(240,96,96,.3);
+      color: var(--red); padding: 4px 12px; border-radius: 5px; font-size: .73rem; cursor: pointer;
+      font-family: inherit; transition: all .15s;
+    }
+    .inv-clear-btn:hover { background: rgba(240,96,96,.08); }
+    .inv-list { overflow-y: auto; }
+    .inv-empty { padding: 40px 20px; text-align: center; color: var(--text3); font-size: .82rem; line-height: 1.7; }
+    .inv-item-img { width: 30px; height: 42px; object-fit: contain; border-radius: 3px; border: 1px solid var(--border); flex-shrink: 0; }
+    .inv-item-img-placeholder { width: 30px; height: 42px; background: var(--surface2); border-radius: 3px; border: 1px solid var(--border); flex-shrink: 0; }
+    .inv-item-info { flex: 1; min-width: 0; }
+    .inv-item-name { font-size: .77rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .inv-item-set { font-size: .65rem; color: var(--text3); font-family: monospace; margin-top: 1px; }
+    .inv-item-price { font-size: .8rem; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+    .inv-qty { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .qty-btn {
+      background: var(--surface3); border: 1px solid var(--border); color: var(--text2);
+      width: 22px; height: 22px; border-radius: 4px; cursor: pointer; font-size: .85rem;
+      display: flex; align-items: center; justify-content: center; transition: all .12s; line-height: 1;
+    }
+    .qty-btn:hover { background: var(--border2); color: var(--text); }
+    .qty-num { font-size: .8rem; font-weight: 700; min-width: 16px; text-align: center; color: var(--text); }
+
+    /* ══ ADD TO INVENTORY BUTTON ══ */
+    .add-inv-btn {
+      background: transparent; border: 1px solid var(--border); color: var(--text3);
+      width: 24px; height: 24px; border-radius: 5px; cursor: pointer; font-size: .9rem;
+      display: inline-flex; align-items: center; justify-content: center; transition: all .12s;
+      flex-shrink: 0; line-height: 1;
+    }
+    .add-inv-btn:hover { background: rgba(232,184,75,.15); border-color: var(--accent); color: var(--accent); }
+    .add-inv-btn.in-inv { background: rgba(232,184,75,.15); border-color: var(--accent); color: var(--accent); }
+    td.inv-cell { width: 36px; padding: 5px 4px !important; text-align: center; }
+
+    /* ══ INV TYPE POPOVER ══ */
+    .inv-type-popover {
+      position: fixed; z-index: 1000;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      flex-direction: column; overflow: hidden; min-width: 150px;
+    }
+    .inv-type-popover-btn {
+      background: transparent; border: none; color: var(--text2);
+      padding: 9px 14px; cursor: pointer; font-size: .8rem;
+      font-family: inherit; text-align: left; transition: all .1s;
+      display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border);
+    }
+    .inv-popover-header { padding: 7px 14px 5px; font-size: .62rem; text-transform: uppercase; letter-spacing: .09em; color: var(--text3); font-weight: 700; border-bottom: 1px solid var(--border); }
+    .inv-type-popover-btn:last-child { border-bottom: none; }
+    .inv-type-popover-btn:hover { background: var(--surface3); color: var(--text); }
+    .inv-type-popover-btn.psa-btn { color: var(--purple); }
+    .inv-type-popover-btn.psa-btn:hover { background: rgba(167,139,250,.1); }
+    .inv-type-popover-btn.ungraded-btn { color: var(--blue); }
+    .inv-type-popover-btn.ungraded-btn:hover { background: rgba(91,156,246,.1); }
+    .inv-pop-price { font-size: .68rem; color: var(--text3); margin-left: auto; }
+
+    /* ══ INVENTORY ITEM GROUP ══ */
+    .inv-item-group { border-bottom: 1px solid var(--border); transition: background .1s; }
+    .inv-item-group:hover { background: var(--surface2); }
+    .inv-item-header { display: flex; align-items: center; gap: 10px; padding: 9px 14px 4px; }
+    .inv-subrows { padding: 0 14px 8px 54px; display: flex; flex-direction: column; gap: 4px; }
+    .inv-subrow { display: flex; align-items: center; gap: 8px; }
+    .inv-type-badge {
+      font-size: .6rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+      min-width: 62px; text-align: center; flex-shrink: 0;
+    }
+    .badge-ungraded { background: rgba(91,156,246,.12); color: var(--blue); border: 1px solid rgba(91,156,246,.2); }
+    .badge-psa { background: rgba(167,139,250,.12); color: var(--purple); border: 1px solid rgba(167,139,250,.2); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🃏</div>
+  <div>
+    <div class="header-title">One Piece TCG Preistracker</div>
+    <div class="header-sub">OP-01 bis OP-15 · Booster Box</div>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" id="tabTracker" onclick="showView('tracker')">📊 Preistracker</button>
+    <button class="nav-tab" id="tabInventar" onclick="showView('inventar')">
+      🗃 Inventar <span class="nav-tab-badge" id="invCountBadge" style="display:none">0</span>
+    </button>
+  </div>
+  <div class="header-right">
+    <div class="gsearch-wrap" id="gsearchWrap">
+      <span class="gsearch-icon">🔍</span>
+      <input class="gsearch" type="text" id="gsearch" placeholder="Karte suchen…"
+             oninput="globalSearch(this.value)" onfocus="globalSearch(this.value)"
+             autocomplete="off" spellcheck="false">
+      <div class="gsearch-drop" id="gsearchDrop"></div>
+    </div>
+    <div class="pulse-dot"></div>
+    <span id="lastUpdate">Laden...</span>
+    <button class="icon-btn" onclick="refreshData()" title="Aktualisieren">⟳</button>
+  </div>
+</header>
+
+<div class="layout" id="trackerView">
+  <aside>
+    <div class="sidebar-top">
+      <span class="sidebar-label">Sets</span>
+    </div>
+    <div class="set-list" id="setList"></div>
+    <div class="sidebar-footer">
+      <button class="compare-btn" id="compareBtn" onclick="toggleCompare()">
+        <span>⊞</span> Alle Sets vergleichen
+      </button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="loading">
+      <div class="spinner"></div>
+      <h3>Daten werden geladen</h3>
+      <p>Preise werden abgerufen…</p>
+      <div class="pbar"><div class="pfill" id="progressFill" style="width:0%"></div></div>
+    </div>
+  </main>
+</div>
+
+<div class="inv-page" id="invView">
+  <div class="inv-page-inner">
+
+    <div class="inv-top-grid">
+      <!-- Kuchendiagramm -->
+      <div class="inv-chart-box">
+        <div class="inv-chart-title">Wertverteilung Inventar</div>
+        <div id="invChartContent" class="inv-chart-empty">
+          Noch keine Karten im Inventar.
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="inv-stats-panel">
+        <div class="inv-stat-card s-accent">
+          <div class="inv-stat-label">Gesamtwert</div>
+          <div class="inv-stat-val" id="invStatTotal">$0.00</div>
+        </div>
+        <div class="inv-stat-card s-blue">
+          <div class="inv-stat-label">Verschiedene Karten</div>
+          <div class="inv-stat-val" id="invStatCards">0</div>
+        </div>
+        <div class="inv-stat-card s-green">
+          <div class="inv-stat-label">Ungraded</div>
+          <div class="inv-stat-val" id="invStatUngraded">0</div>
+          <div class="inv-stat-sub" id="invStatUngradedVal">$0.00</div>
+        </div>
+        <div class="inv-stat-card s-purple">
+          <div class="inv-stat-label">PSA Graded</div>
+          <div class="inv-stat-val" id="invStatPSA">0</div>
+          <div class="inv-stat-sub" id="invStatPSAVal">$0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kartenliste -->
+    <div class="inv-page-list-box">
+      <div class="inv-page-list-head">
+        <span class="inv-page-list-title">Karten im Inventar</span>
+        <button class="inv-clear-btn" onclick="clearInventory()">Inventar leeren</button>
+      </div>
+      <div class="inv-list" id="invList"></div>
+    </div>
+
+  </div>
+</div>
+
+<div id="invPopoverOverlay" onclick="_closeInvPopover()" style="display:none;position:fixed;inset:0;z-index:999;"></div>
+<div class="inv-type-popover" id="invTypePopover" style="display:none">
+  <div class="inv-popover-header">Typ wählen</div>
+  <button class="inv-type-popover-btn ungraded-btn" onclick="confirmAddToInventory('ungraded')">
+    📦 Einzelkarte<span class="inv-pop-price" id="invPopUngradedPrice"></span>
+  </button>
+  <button class="inv-type-popover-btn psa-btn" onclick="confirmAddToInventory('psa9')">
+    🏅 PSA 9<span class="inv-pop-price" id="invPopPsa9Price"></span>
+  </button>
+  <button class="inv-type-popover-btn psa-btn" onclick="confirmAddToInventory('psa10')">
+    🏆 PSA 10<span class="inv-pop-price" id="invPopPsa10Price"></span>
+  </button>
+</div>
+
+<div class="lightbox" id="lightbox" onclick="this.classList.remove('open')">
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<script>
+  const fmt   = c => '$' + (c / 100).toFixed(2);
+  const fmtD  = ts => new Date(ts).toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const SET_IDS = ['op01','op02','op03','op04','op05','op06','op07','op08','op09','op10','op11','op12','op13','op14','op15'];
+
+  let allSets = {}, activeSet = 'op14', compareMode = false, mainChart = null;
+
+  /* ── helpers ── */
+  function getPoints(sd) {
+    if (!sd) return [];
+    const seen = new Set();
+    return [...(sd.history||[]), ...(sd.snapshots||[])]
+      .filter(p => { if (seen.has(p[0])) return false; seen.add(p[0]); return true; })
+      .sort((a,b) => a[0]-b[0]);
+  }
+
+  function calcStats(pts) {
+    if (!pts.length) return null;
+    const v = pts.map(p=>p[1]);
+    const min=Math.min(...v), max=Math.max(...v), avg=Math.round(v.reduce((a,b)=>a+b,0)/v.length);
+    const latest=v[v.length-1], first=v[0], change=latest-first;
+    return { min, max, avg, latest, first, change, pct: ((change/first)*100).toFixed(1) };
+  }
+
+  /* ── SIDEBAR ── */
+  function buildSidebar(data) {
+    const list = document.getElementById('setList');
+    list.innerHTML = '';
+    SET_IDS.forEach(id => {
+      const sd = data.sets?.[id];
+      const available = sd?.available !== false;
+      const pts = getPoints(sd);
+      const st = calcStats(pts);
+      const name = sd?.name?.replace(/OP-\d+\s*/,'') ?? id.toUpperCase();
+      const num = id.replace('op','OP-').replace('OP-0','OP-').replace(/OP-(\d)$/,'OP-0$1');
+
+      const div = document.createElement('div');
+      div.className = 'set-item' + (id===activeSet?' active':'') + (!available?' unavailable':'');
+      div.dataset.id = id;
+      div.innerHTML = `
+        <div class="set-num">${id.replace('op','').replace(/^0/,'').padStart(2,'0')}</div>
+        <div class="set-info">
+          <div class="set-sname">${name}</div>
+          <div class="set-meta">
+            ${st ? `<span class="set-price-small">${fmt(st.latest)}</span>
+                    <span class="trend-tag ${st.change>=0?'up':'dn'}">${st.change>=0?'▲':'▼'}${Math.abs(st.pct)}%</span>`
+                 : '<span style="font-size:.68rem;color:var(--text3)">–</span>'}
+          </div>
+        </div>`;
+      if (available) div.onclick = () => selectSet(id);
+      list.appendChild(div);
+    });
+  }
+
+  function selectSet(id) {
+    if (compareMode) { compareMode = false; document.getElementById('compareBtn').classList.remove('active'); }
+    activeSet = id;
+    document.querySelectorAll('.set-item').forEach(el => el.classList.toggle('active', el.dataset.id===id));
+    renderDetail(id);
+  }
+
+  /* ── DETAIL VIEW ── */
+  function renderDetail(id) {
+    const sd = allSets[id];
+    const pts = getPoints(sd);
+    const st = calcStats(pts);
+    const main = document.getElementById('main');
+
+    if (!pts.length) {
+      main.innerHTML = `<div class="loading"><h3>Keine Daten für ${id.toUpperCase()}</h3><p>Noch nicht auf PriceCharting verfügbar.</p></div>`;
+      return;
+    }
+
+    const up = st.change >= 0;
+    const cards = sd.cards || [];
+    const sales = sd.recent_sales || [];
+    const q = encodeURIComponent(sd.ebay_query || sd.name + ' Booster Box sealed');
+    const ebayUrl = `https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1&LH_ItemCondition=1000&_sop=13`;
+
+    main.innerHTML = `
+      <div class="set-header">
+        ${sd.box_img
+          ? `<img class="box-img" src="${sd.box_img}" alt="${sd.name}" onclick="openLightbox('${sd.box_img.replace('/240.jpg','/400.jpg')}')">`
+          : `<div class="box-img-placeholder">🃏</div>`}
+        <div class="set-header-info">
+          <h2>${sd.name}</h2>
+          <a class="pc-link" href="${sd.url}" target="_blank">↗ PriceCharting</a>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('ov',this)">Übersicht</button>
+        <button class="tab-btn" onclick="switchTab('cards',this)">
+          Einzelkarten <span class="tab-count">${cards.length}</span>
+        </button>
+      </div>
+
+      <!-- TAB: Übersicht -->
+      <div id="tab-ov" class="tab-panel active">
+
+        <div class="stat-row">
+          <div class="stat-box s-cur">
+            <div class="s-label">Aktuell</div>
+            <div class="s-val">${fmt(st.latest)}</div>
+            <div class="s-sub">Letzter Datenpunkt</div>
+          </div>
+          <div class="stat-box s-min">
+            <div class="s-label">Tiefstkurs</div>
+            <div class="s-val">${fmt(st.min)}</div>
+            <div class="s-sub">im Zeitraum</div>
+          </div>
+          <div class="stat-box s-max">
+            <div class="s-label">Höchstkurs</div>
+            <div class="s-val">${fmt(st.max)}</div>
+            <div class="s-sub">im Zeitraum</div>
+          </div>
+          <div class="stat-box s-avg">
+            <div class="s-label">Ø Durchschnitt</div>
+            <div class="s-val">${fmt(st.avg)}</div>
+            <div class="s-sub">über alle Daten</div>
+          </div>
+          <div class="stat-box s-chg">
+            <div class="s-label">Entwicklung gesamt</div>
+            <div class="chg-pill ${up?'up':'dn'}">${up?'▲':'▼'} ${up?'+':''}${fmt(st.change)}</div>
+            <div class="s-sub">${up?'+':''}${st.pct}% seit Beginn (${fmt(st.first)})</div>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-top">
+            <span class="chart-lbl">Preisverlauf</span>
+            <div class="range-row">
+              <button class="rng" onclick="fRange(30,this)">1M</button>
+              <button class="rng" onclick="fRange(90,this)">3M</button>
+              <button class="rng" onclick="fRange(180,this)">6M</button>
+              <button class="rng active" onclick="fRange(0,this)">Alle</button>
+            </div>
+          </div>
+          <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+        </div>
+
+        <div class="bottom-grid">
+          <div class="tbl-box">
+            <div class="tbl-head">
+              <span class="tbl-title">Preisverlauf</span>
+              <span class="tbl-badge">${Math.min(pts.length,50)} Einträge</span>
+            </div>
+            <table>
+              <thead><tr><th>Datum</th><th>Preis</th></tr></thead>
+              <tbody>
+                ${[...pts].reverse().slice(0,50).map(p=>`<tr><td>${fmtD(p[0])}</td><td class="price">${fmt(p[1])}</td></tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="tbl-box">
+            <div class="tbl-head">
+              <span class="tbl-title">Letzte Verkäufe</span>
+              <a class="ext-link" href="${ebayUrl}" target="_blank">↗ eBay</a>
+            </div>
+            ${sales.length
+              ? `<table>
+                  <thead><tr><th>Datum</th><th>Preis</th></tr></thead>
+                  <tbody>${sales.map(s=>`<tr><td>${s.date}</td><td class="price">$${s.price.toFixed(2)}</td></tr>`).join('')}</tbody>
+                </table>`
+              : `<div class="no-data">Keine Verkaufsdaten verfügbar</div>`}
+          </div>
+        </div>
+      </div><!-- /tab-ov -->
+
+      <!-- TAB: Karten -->
+      <div id="tab-cards" class="tab-panel">
+        ${renderCardsTab(sd)}
+      </div>
+    `;
+
+    window._pts = pts;
+    buildChart(pts);
+  }
+
+  /* ── CHART ── */
+  function buildChart(pts) {
+    if (mainChart) mainChart.destroy();
+    const ctx = document.getElementById('mainChart').getContext('2d');
+    const g = ctx.createLinearGradient(0,0,0,260);
+    g.addColorStop(0,'rgba(232,184,75,.22)');
+    g.addColorStop(1,'rgba(232,184,75,0)');
+    mainChart = new Chart(ctx, {
+      type:'line',
+      data:{ labels:pts.map(p=>new Date(p[0])), datasets:[{
+        data:pts.map(p=>p[1]/100), borderColor:'#e8b84b', backgroundColor:g,
+        borderWidth:2, pointRadius:pts.length<20?4:1.5, pointHoverRadius:6,
+        pointBackgroundColor:'#e8b84b', tension:.35, fill:true
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#1a2030', borderColor:'#252d3d', borderWidth:1,
+            titleColor:'#5a6a82', bodyColor:'#e2e8f0', padding:10,
+            callbacks:{ title:i=>fmtD(i[0].parsed.x), label:i=>` $${i.parsed.y.toFixed(2)}` }
+          }
+        },
+        scales:{
+          x:{ type:'time', time:{unit:'week',displayFormats:{week:'dd.MM.yy'}},
+              grid:{color:'rgba(37,45,61,.8)'}, ticks:{color:'#5a6a82',maxTicksLimit:7,font:{size:10}} },
+          y:{ grid:{color:'rgba(37,45,61,.8)'},
+              ticks:{color:'#5a6a82',font:{size:10},callback:v=>'$'+v.toFixed(0)} }
+        }
+      }
+    });
+  }
+
+  function fRange(days, btn) {
+    document.querySelectorAll('.rng').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    let pts = window._pts;
+    if (days>0) { const c=Date.now()-days*86400000; pts=pts.filter(p=>p[0]>=c); }
+    if (pts.length<2) pts=window._pts;
+    buildChart(pts);
+  }
+
+  /* ── CARDS TAB ── */
+  const fmtP = v => (v != null) ? `$${v.toFixed(2)}` : `<span style="color:var(--text3)">–</span>`;
+
+  function renderCardsTab(sd) {
+    const cards = sd.cards || [];
+    if (!cards.length) return `<div class="loading"><h3>Keine Kartendaten</h3><p>Werden beim nächsten täglichen Update geladen.</p></div>`;
+
+    const setId = Object.keys(allSets).find(k => allSets[k] === sd) || '';
+    const rows = cards.map((c,i) => {
+      const ikey = invKey(setId, c);
+      const inInv = !!inventory[ikey];
+      const safeImg = c.img ? c.img.replace(/'/g, "\\'") : '';
+      const safeName = c.name.replace(/'/g, "\\'");
+      return `
+      <tr class="cr" id="cr_${ikey}">
+        <td class="card-img-cell">
+          ${c.img
+            ? `<img class="card-img-thumb" src="${c.img}" alt="${c.name}" loading="lazy" onclick="openLightbox('${safeImg}')">`
+            : `<div style="width:36px;height:50px;background:var(--surface2);border-radius:4px;border:1px solid var(--border)"></div>`}
+        </td>
+        <td class="inv-cell">
+          <button class="add-inv-btn${inInv?' in-inv':''}" id="addbtn_${ikey}"
+            onclick='showInvTypePopover(this, ${JSON.stringify({name:c.name,number:c.number,price:c.price,grade9:c.grade9,psa10:c.psa10,img:c.img,url:c.url})}, "${setId}")'
+            title="${inInv?'Im Inventar':'Typ wählen & hinzufügen'}">+</button>
+        </td>
+        <td class="rank">${i+1}</td>
+        <td class="card-name"><a href="${c.url}" target="_blank">${c.name}</a></td>
+        <td class="card-num">${c.number}</td>
+        <td class="price">${fmtP(c.price)}</td>
+        <td style="font-weight:700;color:var(--blue);font-size:.85rem">${fmtP(c.grade9)}</td>
+        <td style="font-weight:700;color:var(--purple);font-size:.85rem">${fmtP(c.psa10)}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="tbl-box">
+        <div class="tbl-head">
+          <span class="tbl-title">Einzelkarten nach Wert</span>
+          <span class="tbl-badge">${cards.length} Karten</span>
+        </div>
+        <div class="search-wrap">
+          <input class="card-search" type="text" placeholder="Karte suchen…" oninput="filterCards(this.value)">
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th></th>
+              <th>#</th>
+              <th>Karte</th>
+              <th>Nummer</th>
+              <th>Ungraded</th>
+              <th style="color:var(--blue)">Grade 9</th>
+              <th style="color:var(--purple)">PSA 10</th>
+            </tr>
+          </thead>
+          <tbody id="cardsBody">${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function filterCards(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('#cardsBody .cr').forEach(r => {
+      r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+
+  /* ── TABS ── */
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+name).classList.add('active');
+  }
+
+  /* ── COMPARE ── */
+  function toggleCompare() {
+    compareMode = !compareMode;
+    document.getElementById('compareBtn').classList.toggle('active', compareMode);
+    compareMode ? renderCompare() : renderDetail(activeSet);
+  }
+
+  function renderCompare() {
+    const main = document.getElementById('main');
+    const html = SET_IDS.map(id => {
+      const sd = allSets[id];
+      const pts = getPoints(sd);
+      const st = calcStats(pts);
+      const ok = sd?.available !== false && pts.length>0;
+      const name = sd?.name?.replace(/OP-\d+\s*/,'') ?? id;
+      const opNum = 'OP-' + id.replace('op','').replace(/^0/,'').padStart(2,'0');
+      const up = st?.change >= 0;
+      return `
+        <div class="cmp-card${ok?'':' unavailable'}" onclick="${ok?`selectSet('${id}')`:''}" >
+          <div class="cmp-op">${opNum}</div>
+          <div class="cmp-name">${name}</div>
+          ${st ? `
+            <div class="cmp-price">${fmt(st.latest)}</div>
+            <div class="cmp-trend">
+              <span class="chg-pill ${up?'up':'dn'}" style="font-size:.65rem;padding:2px 7px">
+                ${up?'▲':'▼'} ${up?'+':''}${st.pct}%
+              </span>
+            </div>
+            <canvas class="cmp-canvas" id="mc_${id}" width="185" height="44"></canvas>
+          ` : '<div style="color:var(--text3);font-size:.82rem;margin-top:8px">N/A</div>'}
+        </div>`;
+    }).join('');
+
+    main.innerHTML = `
+      <div class="page-title"><h2>Alle Sets im Vergleich</h2></div>
+      <div class="cmp-grid">${html}</div>`;
+
+    SET_IDS.forEach(id => {
+      const sd = allSets[id];
+      const pts = getPoints(sd);
+      if (pts.length < 2) return;
+      const canvas = document.getElementById('mc_'+id);
+      if (!canvas) return;
+      const up = calcStats(pts)?.change >= 0;
+      new Chart(canvas.getContext('2d'), {
+        type:'line',
+        data:{ labels:pts.map(p=>new Date(p[0])), datasets:[{
+          data:pts.map(p=>p[1]/100),
+          borderColor: up ? '#3dd68c' : '#f06060',
+          borderWidth:1.5, pointRadius:0, tension:.4, fill:false
+        }]},
+        options:{ responsive:false, animation:false, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false}} }
+      });
+    });
+  }
+
+  /* ── DATA LOADING ── */
+  const isLocal = ['localhost','127.0.0.1'].includes(location.hostname);
+
+  async function refreshData() {
+    document.getElementById('lastUpdate').textContent = 'Laden…';
+    if (isLocal) {
+      document.getElementById('main').innerHTML = `<div class="loading"><div class="spinner"></div><h3>Scraper läuft</h3><p>Alle 15 Sets werden abgefragt…</p><div class="pbar"><div class="pfill" id="progressFill" style="width:5%"></div></div></div>`;
+      let p=5; const iv=setInterval(()=>{ p=Math.min(p+3,88); const e=document.getElementById('progressFill'); if(e) e.style.width=p+'%'; },1800);
+      try {
+        const r = await fetch('/api/update');
+        clearInterval(iv);
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error);
+        applyData(j.data);
+      } catch { clearInterval(iv); await loadJSON(); }
+    } else {
+      document.getElementById('main').innerHTML = `<div class="loading"><div class="spinner"></div><h3>Daten werden geladen</h3></div>`;
+      await loadJSON();
+    }
+  }
+
+  async function loadJSON() {
+    try {
+      const r = await fetch('prices_all.json?t='+Date.now());
+      if (!r.ok) throw new Error('Datei nicht gefunden');
+      applyData(await r.json());
+    } catch(e) {
+      document.getElementById('main').innerHTML = `<div class="loading"><h3>Fehler beim Laden</h3><p>${e.message}</p></div>`;
+    }
+  }
+
+  function applyData(data) {
+    allSets = data.sets || {};
+    if (data.last_updated) {
+      const d = new Date(data.last_updated);
+      document.getElementById('lastUpdate').textContent = d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+    }
+    buildSidebar(data);
+    if (!allSets[activeSet]?.available) {
+      activeSet = SET_IDS.find(id => allSets[id]?.available && getPoints(allSets[id]).length>0) ?? 'op14';
+    }
+    compareMode ? renderCompare() : renderDetail(activeSet);
+    document.querySelectorAll('.set-item').forEach(el => el.classList.toggle('active', el.dataset.id===activeSet));
+  }
+
+  /* ══ LIGHTBOX ══ */
+  function openLightbox(src) {
+    document.getElementById('lightboxImg').src = src;
+    document.getElementById('lightbox').classList.add('open');
+  }
+
+  /* ══ GLOBAL CARD SEARCH ══ */
+  function globalSearch(q) {
+    const drop = document.getElementById('gsearchDrop');
+    q = q.trim();
+    if (q.length < 2) { drop.classList.remove('open'); return; }
+
+    const ql = q.toLowerCase();
+    const results = [];
+
+    SET_IDS.forEach(id => {
+      const sd = allSets[id];
+      if (!sd?.cards) return;
+      const opNum = 'OP-' + id.replace('op','').padStart(2,'0');
+      sd.cards.forEach(c => {
+        if (c.name.toLowerCase().includes(ql) || c.number.toLowerCase().includes(ql)) {
+          results.push({ ...c, setId: id, setNum: opNum });
+        }
+      });
+    });
+
+    if (!results.length) {
+      drop.innerHTML = `<div class="gsd-empty">Keine Karte gefunden für „${q}"</div>`;
+      drop.classList.add('open');
+      return;
+    }
+
+    // Nach Ungraded-Preis sortieren, max 12 anzeigen
+    results.sort((a,b) => (b.price||0) - (a.price||0));
+    const shown = results.slice(0, 12);
+    const total = results.length;
+
+    const highlight = str => str.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'), '<mark>$1</mark>');
+
+    drop.innerHTML = `
+      <div class="gsd-header">${total} Treffer${total > 12 ? ` (Top 12)` : ''}</div>
+      ${shown.map(c => `
+        <div class="gsd-item" onclick="goToCard('${c.setId}','${c.url}')">
+          ${c.img ? `<img src="${c.img}" style="width:26px;height:36px;object-fit:contain;border-radius:3px;border:1px solid var(--border);flex-shrink:0" loading="lazy">` : ''}
+          <span class="gsd-set">${c.setNum}</span>
+          <span class="gsd-name">${highlight(c.name)}</span>
+          <div class="gsd-prices">
+            ${c.price  != null ? `<span class="gsd-price ug">$${c.price.toFixed(2)}</span>` : ''}
+            ${c.psa10  != null ? `<span class="gsd-price p10">PSA10 $${c.psa10.toFixed(2)}</span>` : ''}
+          </div>
+        </div>`).join('')}`;
+    drop.classList.add('open');
+  }
+
+  function goToCard(setId, url) {
+    // Dropdown schließen
+    document.getElementById('gsearchDrop').classList.remove('open');
+    document.getElementById('gsearch').value = '';
+    // Set öffnen + PriceCharting-Link in neuem Tab
+    selectSet(setId);
+    window.open(url, '_blank');
+  }
+
+  // Dropdown schließen bei Klick außerhalb
+  document.addEventListener('click', e => {
+    if (!document.getElementById('gsearchWrap').contains(e.target)) {
+      document.getElementById('gsearchDrop').classList.remove('open');
+    }
+  });
+
+  /* ══ VIEW SWITCHER ══ */
+  let activeView = 'tracker';
+
+  function showView(view) {
+    activeView = view;
+    document.getElementById('trackerView').style.display = view === 'tracker' ? '' : 'none';
+    document.getElementById('invView').classList.toggle('active', view === 'inventar');
+    document.getElementById('tabTracker').classList.toggle('active', view === 'tracker');
+    document.getElementById('tabInventar').classList.toggle('active', view === 'inventar');
+    if (view === 'inventar') {
+      renderInventoryList();
+      renderInvChart();
+    }
+  }
+
+  /* ══ INVENTORY ══ */
+  let inventory = JSON.parse(localStorage.getItem('op_inventory') || '{}');
+  let _invPopoverCard = null, _invPopoverSet = null;
+  let _invPieChart = null;
+
+  // Migrate old format: qty → ungradedQty
+  Object.values(inventory).forEach(item => {
+    if (item.qty !== undefined && item.ungradedQty === undefined) {
+      item.ungradedQty = item.qty;
+      delete item.qty;
+    }
+    if (!item.psaGrades) item.psaGrades = {};
+  });
+
+  function invKey(setId, card) {
+    return setId + '__' + (card.number || card.name.replace(/\s+/g,'_').slice(0,30));
+  }
+
+  function saveInventory() {
+    localStorage.setItem('op_inventory', JSON.stringify(inventory));
+  }
+
+  function updateInvButton() {
+    let total = 0;
+    Object.values(inventory).forEach(v => {
+      total += (v.ungradedQty || 0);
+      Object.values(v.psaGrades || {}).forEach(q => total += q);
+    });
+    const badge = document.getElementById('invCountBadge');
+    if (total > 0) {
+      badge.textContent = total;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function showInvTypePopover(btnEl, card, setId) {
+    _invPopoverCard = card;
+    _invPopoverSet = setId;
+    const pop     = document.getElementById('invTypePopover');
+    const overlay = document.getElementById('invPopoverOverlay');
+    const rect    = btnEl.getBoundingClientRect();
+    const popW    = 165;
+    let left = rect.left;
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    pop.style.top  = (rect.bottom + 4) + 'px';
+    pop.style.left = left + 'px';
+    document.getElementById('invPopUngradedPrice').textContent = card.price  != null ? ' · $' + card.price.toFixed(2)  : '';
+    document.getElementById('invPopPsa9Price').textContent     = card.grade9 != null ? ' · $' + card.grade9.toFixed(2) : '';
+    document.getElementById('invPopPsa10Price').textContent    = card.psa10  != null ? ' · $' + card.psa10.toFixed(2)  : '';
+    overlay.style.display = 'block';
+    pop.style.display     = 'flex';
+  }
+
+  function _closeInvPopover() {
+    document.getElementById('invTypePopover').style.display     = 'none';
+    document.getElementById('invPopoverOverlay').style.display  = 'none';
+  }
+
+  function confirmAddToInventory(type) {
+    if (!_invPopoverCard || !_invPopoverSet) return;
+    addToInventory(_invPopoverCard, _invPopoverSet, type);
+    _closeInvPopover();
+  }
+
+  function addToInventory(card, setId, type) {
+    const k = invKey(setId, card);
+    if (!inventory[k]) {
+      const opNum = 'OP-' + setId.replace('op','').padStart(2,'0');
+      inventory[k] = {
+        name: card.name, number: card.number,
+        price: card.price, grade9: card.grade9, psa10: card.psa10,
+        img: card.img, url: card.url,
+        setId, opNum, ungradedQty: 0, psaGrades: {}
+      };
+    }
+    const item = inventory[k];
+    if (type === 'ungraded') {
+      item.ungradedQty = (item.ungradedQty || 0) + 1;
+    } else {
+      const grade = type.replace('psa','');
+      item.psaGrades[grade] = (item.psaGrades[grade] || 0) + 1;
+    }
+    saveInventory();
+    updateInvButton();
+    if (activeView === 'inventar') { renderInventoryList(); renderInvChart(); }
+    const btn = document.getElementById('addbtn_' + k);
+    if (btn) btn.classList.add('in-inv');
+  }
+
+  function changeQty(k, type, delta) {
+    if (!inventory[k]) return;
+    const item = inventory[k];
+    if (type === 'ungraded') {
+      item.ungradedQty = Math.max(0, (item.ungradedQty || 0) + delta);
+    } else {
+      const grade = type.replace('psa','');
+      item.psaGrades[grade] = (item.psaGrades[grade] || 0) + delta;
+      if (item.psaGrades[grade] <= 0) delete item.psaGrades[grade];
+    }
+    if ((item.ungradedQty || 0) === 0 && Object.keys(item.psaGrades).length === 0) {
+      delete inventory[k];
+      const btn = document.getElementById('addbtn_' + k);
+      if (btn) btn.classList.remove('in-inv');
+    }
+    saveInventory();
+    updateInvButton();
+    renderInventoryList();
+    renderInvChart();
+  }
+
+  function clearInventory() {
+    if (!Object.keys(inventory).length) return;
+    if (!confirm('Inventar wirklich leeren?')) return;
+    inventory = {};
+    saveInventory();
+    updateInvButton();
+    renderInventoryList();
+    renderInvChart();
+    document.querySelectorAll('.add-inv-btn').forEach(b => b.classList.remove('in-inv'));
+  }
+
+  /* ── Kuchendiagramm ── */
+  function _cardTotalValue(c) {
+    let v = (c.ungradedQty || 0) * (c.price || 0);
+    Object.entries(c.psaGrades || {}).forEach(([grade, qty]) => {
+      v += qty * (grade === '10' ? (c.psa10 || 0) : (grade === '9' ? (c.grade9 || 0) : 0));
+    });
+    return v;
+  }
+
+  function renderInvChart() {
+    const container = document.getElementById('invChartContent');
+    if (!container) return;
+
+    const items = Object.entries(inventory);
+    const hasData = items.some(([,c]) => _cardTotalValue(c) > 0);
+
+    // Update stats
+    let grandTotal = 0, ungradedCount = 0, ungradedVal = 0, psaCount = 0, psaVal = 0;
+    items.forEach(([,c]) => {
+      ungradedCount += (c.ungradedQty || 0);
+      ungradedVal   += (c.ungradedQty || 0) * (c.price || 0);
+      Object.entries(c.psaGrades || {}).forEach(([grade, qty]) => {
+        psaCount += qty;
+        psaVal   += qty * (grade === '10' ? (c.psa10 || 0) : (grade === '9' ? (c.grade9 || 0) : 0));
+      });
+    });
+    grandTotal = ungradedVal + psaVal;
+    const el = id => document.getElementById(id);
+    if (el('invStatTotal'))       el('invStatTotal').textContent       = '$' + grandTotal.toFixed(2);
+    if (el('invStatCards'))       el('invStatCards').textContent       = items.length;
+    if (el('invStatUngraded'))    el('invStatUngraded').textContent    = ungradedCount;
+    if (el('invStatUngradedVal')) el('invStatUngradedVal').textContent = '$' + ungradedVal.toFixed(2);
+    if (el('invStatPSA'))         el('invStatPSA').textContent         = psaCount;
+    if (el('invStatPSAVal'))      el('invStatPSAVal').textContent      = '$' + psaVal.toFixed(2);
+
+    if (!hasData) {
+      if (_invPieChart) { _invPieChart.destroy(); _invPieChart = null; }
+      container.className = 'inv-chart-empty';
+      container.innerHTML = 'Noch keine Karten mit bekanntem Preis im Inventar.';
+      return;
+    }
+
+    // Build chart data: top 9 cards + "Sonstige"
+    const PALETTE = ['#e8b84b','#5b9cf6','#a78bfa','#3dd68c','#f06060','#f97316','#06b6d4','#ec4899','#84cc16'];
+    const sorted = items
+      .map(([k, c]) => ({ name: c.name, val: _cardTotalValue(c) }))
+      .filter(d => d.val > 0)
+      .sort((a, b) => b.val - a.val);
+
+    const TOP = 9;
+    const labels = [], values = [], colors = [];
+    sorted.slice(0, TOP).forEach((d, i) => {
+      labels.push(d.name.length > 20 ? d.name.slice(0, 18) + '…' : d.name);
+      values.push(d.val);
+      colors.push(PALETTE[i % PALETTE.length]);
+    });
+    if (sorted.length > TOP) {
+      labels.push('Sonstige');
+      values.push(sorted.slice(TOP).reduce((s, d) => s + d.val, 0));
+      colors.push('#3a4a5e');
+    }
+
+    // Render chart
+    container.className = 'inv-chart-body';
+    container.innerHTML = `
+      <div class="inv-chart-canvas-wrap"><canvas id="invPieCanvas"></canvas></div>
+      <div class="inv-chart-legend" id="invChartLegend"></div>`;
+
+    if (_invPieChart) { _invPieChart.destroy(); _invPieChart = null; }
+    _invPieChart = new Chart(document.getElementById('invPieCanvas'), {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors,
+          borderWidth: 2,
+          borderColor: '#13181f',
+          hoverBorderColor: '#1a2030'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.label}: $${ctx.raw.toFixed(2)} (${((ctx.raw / grandTotal) * 100).toFixed(1)}%)`
+            }
+          }
+        }
+      }
+    });
+
+    // Custom legend
+    document.getElementById('invChartLegend').innerHTML = labels.map((l, i) => `
+      <div class="inv-legend-item">
+        <span class="inv-legend-dot" style="background:${colors[i]}"></span>
+        <span class="inv-legend-label">${l}</span>
+        <span class="inv-legend-pct">${((values[i] / grandTotal) * 100).toFixed(0)}%</span>
+        <span class="inv-legend-val">$${values[i].toFixed(2)}</span>
+      </div>`).join('');
+  }
+
+  /* ── Kartenliste ── */
+  function renderInventoryList() {
+    const list = document.getElementById('invList');
+    if (!list) return;
+
+    const items = Object.entries(inventory);
+    if (!items.length) {
+      list.innerHTML = `<div class="inv-empty">Noch keine Karten im Inventar.<br>Klicke auf <strong>+</strong> neben einer Karte und wähle den Typ.</div>`;
+      return;
+    }
+
+    list.innerHTML = items.map(([k, c]) => {
+      let subRows = '';
+
+      if ((c.ungradedQty || 0) > 0) {
+        const lineVal = (c.price || 0) * c.ungradedQty;
+        subRows += `
+          <div class="inv-subrow">
+            <span class="inv-type-badge badge-ungraded">Ungraded</span>
+            <div class="inv-qty">
+              <button class="qty-btn" onclick="changeQty('${k}','ungraded',-1)">−</button>
+              <span class="qty-num">${c.ungradedQty}</span>
+              <button class="qty-btn" onclick="changeQty('${k}','ungraded',1)">+</button>
+            </div>
+            <span class="inv-item-price">${c.price != null ? '$'+lineVal.toFixed(2) : '–'}</span>
+          </div>`;
+      }
+
+      Object.entries(c.psaGrades || {}).sort((a,b) => Number(b[0]) - Number(a[0])).forEach(([grade, qty]) => {
+        const psaPrice = grade === '10' ? c.psa10 : (grade === '9' ? c.grade9 : null);
+        const lineVal = (psaPrice || 0) * qty;
+        subRows += `
+          <div class="inv-subrow">
+            <span class="inv-type-badge badge-psa">PSA ${grade}</span>
+            <div class="inv-qty">
+              <button class="qty-btn" onclick="changeQty('${k}','psa${grade}',-1)">−</button>
+              <span class="qty-num">${qty}</span>
+              <button class="qty-btn" onclick="changeQty('${k}','psa${grade}',1)">+</button>
+            </div>
+            <span class="inv-item-price">${psaPrice != null ? '$'+lineVal.toFixed(2) : '–'}</span>
+          </div>`;
+      });
+
+      return `
+        <div class="inv-item-group">
+          <div class="inv-item-header">
+            ${c.img ? `<img class="inv-item-img" src="${c.img}" loading="lazy">` : `<div class="inv-item-img-placeholder"></div>`}
+            <div class="inv-item-info">
+              <div class="inv-item-name" title="${c.name}">${c.name}</div>
+              <div class="inv-item-set">${c.opNum}${c.number ? ' · ' + c.number : ''}</div>
+            </div>
+          </div>
+          <div class="inv-subrows">${subRows}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // Init badge on load
+  updateInvButton();
+
+  refreshData();
+</script>
+</body>
+</html>
