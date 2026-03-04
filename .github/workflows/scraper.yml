@@ -2,7 +2,7 @@ name: Preise aktualisieren
 
 on:
   schedule:
-    - cron: '0 8 * * *'   # täglich um 08:00 UTC (09:00 MEZ)
+    - cron: '59 22 * * *'  # täglich um 22:59 UTC = 23:59 MEZ
   workflow_dispatch:        # manuell auslösbar über GitHub UI
 
 jobs:
