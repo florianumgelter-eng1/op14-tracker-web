@@ -405,6 +405,18 @@
     .inv-grade-badge.ungraded { background: rgba(142,142,147,.12); color: var(--text2); }
     .inv-grade-badge.psa9 { background: rgba(0,122,255,.1); color: var(--blue); }
     .inv-grade-badge.psa10 { background: rgba(175,82,222,.1); color: var(--purple); }
+    .inv-grade-badge.display { background: rgba(255,149,0,.12); color: var(--orange); }
+
+    /* ══ DISPLAY BUTTON ══ */
+    .add-display-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: rgba(255,149,0,.08); border: 1px solid rgba(255,149,0,.3);
+      color: var(--orange); padding: 5px 11px; border-radius: 8px;
+      font-size: .73rem; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: all .15s; white-space: nowrap;
+    }
+    .add-display-btn:hover { background: rgba(255,149,0,.15); border-color: var(--orange); }
+    .add-display-btn.in-inv { background: rgba(255,149,0,.15); border-color: var(--orange); }
 
     /* ══ SIDEBAR SPARKLINE ══ */
     .set-spark { flex-shrink: 0; width: 48px; height: 26px; margin-right: 8px; opacity: .75; }
@@ -454,6 +466,21 @@
     .inv-pnl.pos { color: var(--green); }
     .inv-pnl.neg { color: var(--red); }
     .inv-pnl.neu { color: var(--text3); }
+
+    /* ══ PORTFOLIO HISTORY CHART ══ */
+    .inv-history-wrap {
+      padding: 14px 16px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+      background: var(--surface);
+    }
+    .inv-history-head {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+    }
+    .inv-history-title { font-size: .63rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text3); font-weight: 600; }
+    .inv-history-delta { font-size: .72rem; font-weight: 700; }
+    .inv-history-delta.pos { color: var(--green); }
+    .inv-history-delta.neg { color: var(--red); }
+    .inv-history-delta.neu { color: var(--text3); }
+    #invHistoryChart { height: 90px; }
 
     /* ══ BETTER EMPTY STATES ══ */
     .empty-state { padding: 48px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -524,6 +551,13 @@
       <div class="inv-stat-label">Karten</div>
       <div class="inv-stat-val blue" id="invCardCount">0</div>
     </div>
+  </div>
+  <div class="inv-history-wrap" id="invHistoryWrap" style="display:none">
+    <div class="inv-history-head">
+      <span class="inv-history-title">Wertentwicklung</span>
+      <span class="inv-history-delta neu" id="invHistoryDelta">–</span>
+    </div>
+    <canvas id="invHistoryChart"></canvas>
   </div>
   <div class="inv-chart-wrap" id="invChartWrap" style="display:none">
     <div class="inv-chart-title">Wertverteilung</div>
@@ -667,6 +701,10 @@
           <h2>${sd.name}</h2>
           <a class="pc-link" href="${sd.url}" target="_blank">↗ PriceCharting</a>
         </div>
+        <button class="add-display-btn${isDisplayInInv(id)?' in-inv':''}" id="dispbtn_${id}"
+          onclick='addDisplayToInventory(${JSON.stringify({id, name: sd.name, price: st ? st.latest/100 : null, img: sd.box_img||null, url: sd.url})})'>
+          📦 Display${isDisplayInInv(id) ? ' ✓' : ' +'}
+        </button>
       </div>
 
       <div class="tabs">
@@ -1132,6 +1170,34 @@
     return setId + '__' + (card.number || card.name.replace(/\s+/g,'_').slice(0,30)) + '__' + (grade || 'ungraded');
   }
 
+  function displayKey(id) {
+    return id + '__display__display';
+  }
+
+  function isDisplayInInv(id) {
+    return !!inventory[displayKey(id)];
+  }
+
+  function addDisplayToInventory(info) {
+    const k = displayKey(info.id);
+    const opNum = 'OP-' + info.id.replace('op','').padStart(2,'0');
+    if (inventory[k]) {
+      inventory[k].qty += 1;
+    } else {
+      inventory[k] = {
+        name: info.name + ' Display',
+        number: '', grade: 'display', type: 'display',
+        price: info.price, img: info.img, url: info.url,
+        setId: info.id, opNum, qty: 1, addedAt: Date.now()
+      };
+    }
+    saveInventory();
+    updateInvButton();
+    renderInventoryList();
+    const btn = document.getElementById('dispbtn_' + info.id);
+    if (btn) { btn.classList.add('in-inv'); btn.textContent = '📦 Display ✓'; }
+  }
+
   // Grade picker popup
   let _gradePickerEl = null;
   function closeGradePicker() {
@@ -1225,11 +1291,17 @@
     if (inventory[k].qty <= 0) {
       delete inventory[k];
       // Remove in-inv class if no grades left for this card
-      const baseKey = k.split('__').slice(0,2).join('__');
-      const anyLeft = ['ungraded','psa9','psa10'].some(g => inventory[baseKey + '__' + g]);
-      if (!anyLeft) {
-        const btn = document.getElementById('addbtn_' + baseKey);
-        if (btn) btn.classList.remove('in-inv');
+      const parts = k.split('__');
+      if (parts[2] === 'display') {
+        const btn = document.getElementById('dispbtn_' + parts[0]);
+        if (btn) { btn.classList.remove('in-inv'); btn.innerHTML = '📦 Display +'; }
+      } else {
+        const baseKey = parts.slice(0,2).join('__');
+        const anyLeft = ['ungraded','psa9','psa10'].some(g => inventory[baseKey + '__' + g]);
+        if (!anyLeft) {
+          const btn = document.getElementById('addbtn_' + baseKey);
+          if (btn) btn.classList.remove('in-inv');
+        }
       }
     }
     saveInventory();
@@ -1245,6 +1317,91 @@
     updateInvButton();
     renderInventoryList();
     document.querySelectorAll('.add-inv-btn').forEach(b => b.classList.remove('in-inv'));
+  }
+
+  // Portfolio value history — [[timestamp_ms, totalValue], ...]
+  let portfolioHistory = JSON.parse(localStorage.getItem('op_portfolio_history') || '[]');
+
+  function savePortfolioSnapshot(total) {
+    if (total <= 0) return;
+    const now = Date.now();
+    const ONE_HOUR = 3600 * 1000;
+    // Only save once per hour max
+    const last = portfolioHistory[portfolioHistory.length - 1];
+    if (last && now - last[0] < ONE_HOUR) {
+      // Update last snapshot with current value
+      portfolioHistory[portfolioHistory.length - 1] = [last[0], total];
+    } else {
+      portfolioHistory.push([now, total]);
+    }
+    // Keep max 365 entries
+    if (portfolioHistory.length > 365) portfolioHistory = portfolioHistory.slice(-365);
+    localStorage.setItem('op_portfolio_history', JSON.stringify(portfolioHistory));
+  }
+
+  let invHistoryChart = null;
+
+  function renderHistoryChart(total) {
+    const wrap  = document.getElementById('invHistoryWrap');
+    const delta = document.getElementById('invHistoryDelta');
+    if (!wrap) return;
+
+    if (portfolioHistory.length < 2) {
+      wrap.style.display = 'none';
+      if (invHistoryChart) { invHistoryChart.destroy(); invHistoryChart = null; }
+      return;
+    }
+
+    wrap.style.display = '';
+    const first = portfolioHistory[0][1];
+    const diff  = total - first;
+    const pct   = ((diff / first) * 100).toFixed(1);
+    delta.textContent = `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${diff >= 0 ? '+' : ''}${pct}%)`;
+    delta.className = 'inv-history-delta ' + (diff > 0 ? 'pos' : diff < 0 ? 'neg' : 'neu');
+
+    const canvas = document.getElementById('invHistoryChart');
+    if (invHistoryChart) invHistoryChart.destroy();
+
+    const up = diff >= 0;
+    const color = up ? '#34C759' : '#FF3B30';
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 90);
+    grad.addColorStop(0, up ? 'rgba(52,199,89,.15)' : 'rgba(255,59,48,.12)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+
+    invHistoryChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: portfolioHistory.map(p => new Date(p[0])),
+        datasets: [{
+          data: portfolioHistory.map(p => p[1]),
+          borderColor: color, backgroundColor: grad,
+          borderWidth: 2, pointRadius: portfolioHistory.length < 8 ? 3 : 0,
+          pointBackgroundColor: color, tension: .35, fill: true
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(255,255,255,.97)', borderColor: 'rgba(0,0,0,.08)', borderWidth: 1,
+            titleColor: '#AEAEB2', bodyColor: '#1C1C1E', padding: 8,
+            callbacks: {
+              title: i => new Date(i[0].parsed.x).toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric'}),
+              label: i => ` $${i.parsed.y.toFixed(2)}`
+            }
+          }
+        },
+        scales: {
+          x: { type: 'time', time: { unit: portfolioHistory.length > 60 ? 'month' : 'week', displayFormats: { week: 'dd.MM', month: 'MMM yy' } },
+               grid: { display: false }, ticks: { color: '#AEAEB2', maxTicksLimit: 5, font: { size: 9 } } },
+          y: { grid: { color: 'rgba(0,0,0,.04)' },
+               ticks: { color: '#AEAEB2', font: { size: 9 }, callback: v => '$' + v.toFixed(0) } }
+        }
+      }
+    });
   }
 
   let invPieChart = null;
@@ -1267,6 +1424,9 @@
       if (countEl)   countEl.textContent  = '0';
       if (chartWrap) chartWrap.style.display = 'none';
       if (invPieChart) { invPieChart.destroy(); invPieChart = null; }
+      const hw = document.getElementById('invHistoryWrap');
+      if (hw) hw.style.display = 'none';
+      if (invHistoryChart) { invHistoryChart.destroy(); invHistoryChart = null; }
       const exportRow = document.getElementById('invExportRow');
       if (exportRow) exportRow.style.display = 'none';
       return;
@@ -1289,6 +1449,10 @@
 
     if (totalEl) totalEl.textContent = '$' + total.toFixed(2);
     if (countEl) countEl.textContent = totalQty;
+
+    // Portfolio history snapshot + chart
+    savePortfolioSnapshot(total);
+    renderHistoryChart(total);
 
     // Pie chart
     if (chartWrap) chartWrap.style.display = '';
@@ -1314,7 +1478,7 @@
     // Card list with Kaufpreis + P&L
     list.innerHTML = items.map(([k, c], i) => {
       const lineVal = (c.price || 0) * c.qty;
-      const gradeLbl = c.grade === 'psa9' ? 'PSA 9' : c.grade === 'psa10' ? 'PSA 10' : 'Ungraded';
+      const gradeLbl = c.grade === 'psa9' ? 'PSA 9' : c.grade === 'psa10' ? 'PSA 10' : c.grade === 'display' ? 'Display' : 'Ungraded';
       const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${chartColors[i]};flex-shrink:0"></span>`;
       const buyTotal = c.buyPrice != null ? c.buyPrice * c.qty : null;
       const pnl = buyTotal != null && c.price != null ? lineVal - buyTotal : null;
