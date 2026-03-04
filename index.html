@@ -487,11 +487,101 @@
     .empty-state svg { opacity: .25; }
     .empty-state h4 { font-size: .9rem; font-weight: 600; color: var(--text2); }
     .empty-state p { font-size: .78rem; color: var(--text3); line-height: 1.6; max-width: 260px; }
+
+    /* ══ HAMBURGER BUTTON ══ */
+    .hamburger-btn {
+      display: none; background: none; border: none; cursor: pointer;
+      padding: 6px; border-radius: 8px; color: var(--text2); font-size: 1.15rem;
+      flex-shrink: 0; transition: all .15s;
+    }
+    .hamburger-btn:hover { background: var(--surface2); color: var(--text); }
+
+    /* ══ SIDEBAR OVERLAY (mobile) ══ */
+    .sidebar-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+      z-index: 150; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    }
+    .sidebar-overlay.open { display: block; }
+
+    /* ══ MOBILE RESPONSIVE ══ */
+    @media (max-width: 768px) {
+      :root { --sidebar: 260px; }
+
+      .hamburger-btn { display: flex; align-items: center; justify-content: center; }
+
+      /* Sidebar becomes an overlay */
+      aside {
+        position: fixed; top: 52px; left: 0; bottom: 0;
+        z-index: 200; transform: translateX(-100%);
+        transition: transform .25s cubic-bezier(.4,0,.2,1);
+        box-shadow: 8px 0 32px rgba(0,0,0,.12);
+      }
+      aside.mobile-open { transform: translateX(0); }
+
+      /* Header: hide less important elements */
+      #lastUpdate { display: none; }
+      .pulse-dot { display: none; }
+      .header-sub { display: none; }
+
+      /* Search: narrower */
+      .gsearch { width: 140px; }
+      .gsearch:focus { width: 180px; }
+
+      /* Main content: full width, less padding */
+      main { padding: 14px 12px; }
+
+      /* Stat row: 2 cols */
+      .stat-row { grid-template-columns: repeat(2, 1fr); }
+
+      /* Set header: stack vertically */
+      .set-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .set-header .add-display-btn { align-self: flex-start; }
+
+      /* Chart: shorter */
+      .chart-wrap { height: 220px; }
+
+      /* Card table: horizontal scroll */
+      .tbl-box { overflow-x: auto; }
+      table { min-width: 480px; }
+
+      /* Inventory drawer: full width */
+      .inv-drawer { width: 100%; top: 52px; border-left: none; border-top: 1px solid var(--border); }
+
+      /* Compare grid: smaller min */
+      .cmp-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
+
+      /* Scraper bar: compact */
+      .scraper-pbar { width: 120px; }
+      .scraper-sub { display: none; }
+
+      /* Tabs: scroll if overflow */
+      .tabs { overflow-x: auto; white-space: nowrap; }
+      .tab-btn { flex-shrink: 0; padding: 6px 12px; }
+    }
+
+    @media (max-width: 480px) {
+      header { padding: 0 12px; gap: 8px; }
+      .header-title { font-size: .82rem; }
+
+      /* Stat row: 2 cols still, but smaller */
+      .stat-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .s-val { font-size: 1.2rem; }
+
+      /* Search: icon only on very small */
+      .gsearch { width: 110px; }
+      .gsearch:focus { width: 150px; }
+
+      /* Compare grid: 2 cols min */
+      .cmp-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+
+      main { padding: 10px 10px; }
+    }
   </style>
 </head>
 <body>
 
 <header>
+  <button class="hamburger-btn" onclick="toggleSidebar()" title="Menü">☰</button>
   <div class="logo">🃏</div>
   <div>
     <div class="header-title">One Piece TCG Preistracker</div>
@@ -514,8 +604,9 @@
   </div>
 </header>
 
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 <div class="layout">
-  <aside>
+  <aside id="sidebar">
     <div class="sidebar-top">
       <span class="sidebar-label">Sets</span>
     </div>
@@ -668,6 +759,7 @@
     activeSet = id;
     document.querySelectorAll('.set-item').forEach(el => el.classList.toggle('active', el.dataset.id===id));
     renderDetail(id);
+    closeSidebarOnMobile();
   }
 
   /* ── DETAIL VIEW ── */
@@ -933,6 +1025,7 @@
     compareMode = !compareMode;
     document.getElementById('compareBtn').classList.toggle('active', compareMode);
     compareMode ? renderCompare() : renderDetail(activeSet);
+    closeSidebarOnMobile();
   }
 
   function renderCompare() {
@@ -1562,6 +1655,23 @@
     invOpen = !invOpen;
     document.getElementById('invDrawer').classList.toggle('open', invOpen);
     if (invOpen) renderInventoryList();
+  }
+
+  function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const isOpen = sidebar.classList.toggle('mobile-open');
+    overlay.classList.toggle('open', isOpen);
+  }
+
+  // Close sidebar when a set is selected (mobile)
+  function closeSidebarOnMobile() {
+    if (window.innerWidth <= 768) {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      sidebar.classList.remove('mobile-open');
+      overlay.classList.remove('open');
+    }
   }
 
   // Init inventory button state on load
