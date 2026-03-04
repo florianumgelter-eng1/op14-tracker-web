@@ -17,39 +17,69 @@ Windows batch shortcuts:
 - `update_und_öffnen.bat` — runs the scraper then starts the server
 - `auto_update.bat` — scraper only
 
+## Deployment
+
+- **Local:** `python server.py` → http://localhost:8765
+- **GitHub Pages (static):** https://florianumgelter-eng1.github.io/op14-tracker-web/ — push to `web` remote via `git push web main`
+- **GitHub Actions** auto-commits updated `prices_all.json` daily at 22:59 UTC (`.github/workflows/scraper.yml`)
+
 ## Architecture
 
-This is a single-page local web app with no build step and no framework.
+Single-page app, no build step, no framework. One HTML file + one Python backend.
 
 ### Backend (`server.py`)
-- Minimal `HTTPServer` serving static files from the project root
-- Two API endpoints:
-  - `GET /api/prices` — returns `prices_all.json`
-  - `GET /api/update` — triggers `scraper.run()` synchronously and returns the result
-- No database; all persistent price data lives in `prices_all.json`
+
+Minimal `HTTPServer` with these endpoints:
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/prices` | Returns `prices_all.json` |
+| `GET /api/update` | Runs scraper **synchronously** (legacy, blocks server) |
+| `GET /api/scrape/start` | Starts scraper in background thread, returns immediately |
+| `GET /api/scrape/status` | Returns `{ running, progress, current, done, error, data? }` |
+| `GET /api/scrape/cancel` | Cancels running scraper |
+
+The async scraper state is held in a module-level `_scrape_state` dict protected by `_scrape_lock`.
 
 ### Scraper (`scraper.py`)
-- Fetches booster box price history and individual card prices from **PriceCharting.com** for OP-01 through OP-15
-- Also parses recent sold listings from PriceCharting's own sales table
-- Merges new data into `prices_all.json` without overwriting historical data points (`merge_history`)
-- Data shape per set: `{ name, url, history: [[timestamp_ms, price_cents], ...], snapshots, cards, recent_sales, available }`
+
+- Fetches booster box price history + individual card prices from **PriceCharting.com** for OP-01 through OP-15
+- Merges new data into `prices_all.json` without overwriting historical points (`merge_history`)
+- Data shape per set: `{ name, url, history: [[timestamp_ms, price_cents], ...], snapshots, cards, recent_sales, available, box_img }`
 - Card shape: `{ name, number, price, grade9, psa10, url, img }`
-- Runs daily via GitHub Actions (`.github/workflows/scraper.yml`) at 22:59 UTC, commits updated `prices_all.json`
 
 ### Frontend (`index.html`)
-Single self-contained HTML file with inline CSS and JS. Key sections:
 
-- **Set sidebar** — lists all 15 sets, clicking loads that set's data
-- **Main panel tabs**: Overview (price chart + stats + recent sales) | Cards (sortable table) | Market Overview (mini charts for all sets)
-- **Card table** — renders from `prices_all.json → sets[setId].cards`, columns: img, +inv button, rank, name, number, ungraded, PSA9, PSA10
-- **Inventory drawer** (right slide-in) — stored in `localStorage` as `op_inventory`
-  - Key format: `{setId}__{cardNumber}__{grade}` where grade ∈ `ungraded | psa9 | psa10`
-  - Each entry stores: card data + `grade`, `price` (for chosen grade), `qty`, `addedAt` (timestamp)
-  - Renders a Chart.js doughnut showing value distribution + clean card list with grade badges
-- **Grade picker** — popup shown on "+" click, lets user choose Ungraded / PSA 9 / PSA 10 before adding to inventory
-- **Charts** — Chart.js 4.4 with date-fns adapter, time-series line chart for set price history
+Single self-contained HTML file — all CSS and JS inline. Design: Apple-inspired light theme (`#F2F2F7` background, `#007AFF` accent, frosted glass header/sidebar via `backdrop-filter`).
+
+**Key JS functions:**
+
+| Function | Purpose |
+|---|---|
+| `refreshData()` | Starts async scraper (local) or loads JSON (GitHub Pages); polls `/api/scrape/status` every 2s |
+| `buildSidebar(data)` | Renders set list; calls `buildSparklines()` after |
+| `buildSparklines(data)` | Draws 30-day Chart.js sparklines on sidebar canvases |
+| `renderDetail(id)` | Renders main panel for a set (stats, chart, cards tab) |
+| `renderCardsTab(sd)` | Builds card table with hover preview, grade picker, inventory buttons |
+| `showCardPreview(el, src, name, price)` | Floating hover preview near cursor |
+| `showGradePicker(event, card, setId)` | Grade selection popup (Ungraded / PSA 9 / PSA 10) |
+| `addToInventory(card, setId, grade)` | Adds card to localStorage inventory with `addedAt` timestamp |
+| `renderInventoryList()` | Renders inventory drawer: stats, doughnut chart, card list with P&L |
+| `setBuyPrice(k, val)` | Saves purchase price per inventory entry, triggers P&L recalc |
+| `exportInventory(format)` | Downloads inventory as CSV or JSON |
+
+**Inventory localStorage schema** (`op_inventory`):
+```
+key: "{setId}__{cardNumber}__{grade}"   // grade ∈ ungraded | psa9 | psa10
+value: { name, number, price, grade, qty, setId, opNum, addedAt, buyPrice? }
+```
+`price` is set to the grade-specific price at time of adding. `buyPrice` is user-entered purchase price per unit for P&L calculation.
+
+**Charts:** Chart.js 4.4 + date-fns adapter. Main chart: time-series line. Sidebar: static sparklines (no interaction). Inventory: doughnut.
 
 ### Data flow
-1. On load: `refreshData()` fetches `prices_all.json`, populates `allSets`
-2. Selecting a set calls `renderSet(sd)` which builds the card table and price chart
-3. Inventory lives entirely client-side in localStorage; no server involvement
+
+1. `refreshData()` → starts async scrape or loads `prices_all.json` → `applyData()`
+2. `applyData()` → `buildSidebar()` + `buildSparklines()` → `renderDetail(activeSet)`
+3. Selecting a set → `renderDetail(id)` → `buildChart(pts)`
+4. Inventory is entirely client-side (localStorage); scraper/server never touches it
